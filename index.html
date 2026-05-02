@@ -640,7 +640,8 @@ async function submitTx() {
   if (error) {
     txsData = txsData.filter(t => t.id !== tempId); // Revert optimistic
     renderHome();
-    showToast('خطأ في حفظ المعاملة', 'error');
+    console.error('Supabase Insert Error:', error);
+    showToast('خطأ: ' + (error.message || 'فشل الحفظ'), 'error');
   } else {
     // Update local ID to real UUID
     const idx = txsData.findIndex(t => t.id === tempId);
@@ -707,7 +708,8 @@ async function deleteTx(id) {
   if (error) {
     txsData = oldData; // revert
     renderHome();
-    showToast('خطأ في الحذف','error');
+    console.error('Supabase Delete Error:', error);
+    showToast('خطأ: ' + (error.message || 'فشل الحذف'), 'error');
   } else {
     showToast('تم الحذف','error');
   }
