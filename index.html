@@ -618,7 +618,7 @@ function submitTx() {
   showToast(type==='income' ? '✓ تم حفظ الدخل' : '✓ تم حفظ المصروف','success');
 }
 
-function fmt(n) { return new Intl.NumberFormat('ar-SA').format(Math.round(n)) + ' MRU'; }
+function fmt(n) { return new Intl.NumberFormat('en-US').format(Math.round(n)) + ' MRU'; }
 
 function renderHome() {
   const txs  = loadTx();
