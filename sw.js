@@ -1,4 +1,4 @@
-const CACHE = 'mali-v1';
+const CACHE = 'mali-v2';
 const ASSETS = [
   '/',
   '/index.html',
