@@ -509,7 +509,7 @@
 <script>
 const supabaseUrl = 'https://noxxsplcxobjzdnolasa.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5veHhzcGxjeG9ianpkbm9sYXNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3Mzg5MjYsImV4cCI6MjA5MzMxNDkyNn0.Id4fMOH-OiVpdM5mVIhf8vUL-VJAlwpINnT-Spz3oHY';
-const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 const DEFAULT_INCOME_CATS  = ["تطوير تطبيقات","خدمات وكالة","عمولة تسويق","مشروع SaaS","استشارات","فريلانس","أخرى – دخل"];
 const DEFAULT_EXPENSE_CATS = ["إيجار","رواتب","تسويق","اشتراكات SaaS","معدات","مصاريف بنكية","تطوير","سفر","شخصي","أخرى – مصروف"];
@@ -523,7 +523,7 @@ let txsData = [];
 // App Init
 async function initData() {
   try {
-    const { data: setRes } = await supabase.from('user_settings').select('*').eq('id', 1).single();
+    const { data: setRes } = await db.from('user_settings').select('*').eq('id', 1).single();
     if (setRes) {
       incomeCats = setRes.income_cats || DEFAULT_INCOME_CATS;
       expenseCats = setRes.expense_cats || DEFAULT_EXPENSE_CATS;
@@ -532,7 +532,7 @@ async function initData() {
   } catch(e) {}
 
   try {
-    const { data: txRes } = await supabase.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
+    const { data: txRes } = await db.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
     if (txRes) {
       txsData = txRes.map(t => ({
         id: t.id, type: t.type, date: t.date, desc: t.description, amount: Number(t.amount), cat: t.category, method: t.method, source: t.source
@@ -635,7 +635,7 @@ async function submitTx() {
   
   // Save to DB
   const dbObj = { type, date, description: desc, amount, category: cat, method, source: '' };
-  const { data, error } = await supabase.from('transactions').insert([dbObj]).select();
+  const { data, error } = await db.from('transactions').insert([dbObj]).select();
   
   if (error) {
     txsData = txsData.filter(t => t.id !== tempId); // Revert optimistic
@@ -703,7 +703,7 @@ async function deleteTx(id) {
   if (document.getElementById('page-history').classList.contains('active')) renderHistory();
   if (document.getElementById('page-analytics').classList.contains('active')) renderAnalytics();
   
-  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  const { error } = await db.from('transactions').delete().eq('id', id);
   if (error) {
     txsData = oldData; // revert
     renderHome();
@@ -878,7 +878,7 @@ function renderSettings() {
 }
 
 async function saveSettingsDB() {
-  await supabase.from('user_settings').upsert({ id: 1, income_cats: incomeCats, expense_cats: expenseCats, payment_methods: paymentMethods });
+  await db.from('user_settings').upsert({ id: 1, income_cats: incomeCats, expense_cats: expenseCats, payment_methods: paymentMethods });
 }
 
 function addListItem(type) {
