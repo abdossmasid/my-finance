@@ -14,6 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       --bg:        #f8fafc;
@@ -506,21 +507,45 @@
 <div class="toast" id="toast"></div>
 
 <script>
+const supabaseUrl = 'https://noxxsplcxobjzdnolasa.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5veHhzcGxjeG9ianpkbm9sYXNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3Mzg5MjYsImV4cCI6MjA5MzMxNDkyNn0.Id4fMOH-OiVpdM5mVIhf8vUL-VJAlwpINnT-Spz3oHY';
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
 const DEFAULT_INCOME_CATS  = ["تطوير تطبيقات","خدمات وكالة","عمولة تسويق","مشروع SaaS","استشارات","فريلانس","أخرى – دخل"];
 const DEFAULT_EXPENSE_CATS = ["إيجار","رواتب","تسويق","اشتراكات SaaS","معدات","مصاريف بنكية","تطوير","سفر","شخصي","أخرى – مصروف"];
 const DEFAULT_METHODS      = ["كاش","تحويل بنكي","بطاقة","موبايل موني"];
 
-function getList(key, defaultList) {
-  const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : defaultList;
-}
-function setList(key, list) {
-  localStorage.setItem(key, JSON.stringify(list));
-}
+let incomeCats = DEFAULT_INCOME_CATS;
+let expenseCats = DEFAULT_EXPENSE_CATS;
+let paymentMethods = DEFAULT_METHODS;
+let txsData = [];
 
-let incomeCats = getList('mali_income_cats', DEFAULT_INCOME_CATS);
-let expenseCats = getList('mali_expense_cats', DEFAULT_EXPENSE_CATS);
-let paymentMethods = getList('mali_methods', DEFAULT_METHODS);
+// App Init
+async function initData() {
+  try {
+    const { data: setRes } = await supabase.from('user_settings').select('*').eq('id', 1).single();
+    if (setRes) {
+      incomeCats = setRes.income_cats || DEFAULT_INCOME_CATS;
+      expenseCats = setRes.expense_cats || DEFAULT_EXPENSE_CATS;
+      paymentMethods = setRes.payment_methods || DEFAULT_METHODS;
+    }
+  } catch(e) {}
+
+  try {
+    const { data: txRes } = await supabase.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
+    if (txRes) {
+      txsData = txRes.map(t => ({
+        id: t.id, type: t.type, date: t.date, desc: t.description, amount: Number(t.amount), cat: t.category, method: t.method, source: t.source
+      }));
+    }
+  } catch(e) {}
+
+  updateDateNav();
+  renderHome();
+  if (document.getElementById('page-history').classList.contains('active')) renderHistory();
+  if (document.getElementById('page-analytics').classList.contains('active')) renderAnalytics();
+  if (document.getElementById('page-settings').classList.contains('active')) renderSettings();
+}
 
 function getCatIcon(cat, type) {
   const icons = {
@@ -534,8 +559,7 @@ function getCatIcon(cat, type) {
   return type === 'income' ? '💰' : '💸';
 }
 
-function loadTx() { return JSON.parse(localStorage.getItem('mali_tx') || '[]'); }
-function saveTx(arr) { localStorage.setItem('mali_tx', JSON.stringify(arr)); }
+function loadTx() { return txsData; }
 
 let viewDate = new Date();
 viewDate.setHours(0,0,0,0);
@@ -560,15 +584,9 @@ function updateDateNav() {
   document.getElementById('txDayTitle').textContent =
     dateKey(viewDate) === dateKey(today()) ? 'معاملات اليوم' : `معاملات ${formatDateAr(viewDate)}`;
 }
-document.getElementById('prevDay').onclick = () => {
-  viewDate.setDate(viewDate.getDate() - 1);
-  updateDateNav(); renderHome();
-};
+document.getElementById('prevDay').onclick = () => { viewDate.setDate(viewDate.getDate() - 1); updateDateNav(); renderHome(); };
 document.getElementById('nextDay').onclick = () => {
-  if (dateKey(viewDate) < dateKey(today())) {
-    viewDate.setDate(viewDate.getDate() + 1);
-    updateDateNav(); renderHome();
-  }
+  if (dateKey(viewDate) < dateKey(today())) { viewDate.setDate(viewDate.getDate() + 1); updateDateNav(); renderHome(); }
 };
 
 function openModal(type) {
@@ -595,7 +613,7 @@ function closeModal(e) {
   document.getElementById('overlay').classList.remove('open');
 }
 
-function submitTx() {
+async function submitTx() {
   const type   = document.getElementById('modalType').value;
   const amount = parseFloat(document.getElementById('fAmount').value);
   const cat    = document.getElementById('fCat').value;
@@ -605,17 +623,30 @@ function submitTx() {
 
   const date = dateKey(viewDate);
   const desc = cat;
+  const tempId = Date.now().toString();
 
-  const tx = { id: Date.now(), type, date, desc, amount, cat, method, source: '' };
-  const arr = loadTx();
-  arr.push(tx);
-  saveTx(arr);
+  const txObj = { id: tempId, type, date, desc, amount, cat, method, source: '' };
+  txsData.unshift(txObj); // Optimistic UI update
 
   closeModal();
   renderHome();
   if (document.getElementById('page-history').classList.contains('active')) renderHistory();
   if (document.getElementById('page-analytics').classList.contains('active')) renderAnalytics();
-  showToast(type==='income' ? '✓ تم حفظ الدخل' : '✓ تم حفظ المصروف','success');
+  
+  // Save to DB
+  const dbObj = { type, date, description: desc, amount, category: cat, method, source: '' };
+  const { data, error } = await supabase.from('transactions').insert([dbObj]).select();
+  
+  if (error) {
+    txsData = txsData.filter(t => t.id !== tempId); // Revert optimistic
+    renderHome();
+    showToast('خطأ في حفظ المعاملة', 'error');
+  } else {
+    // Update local ID to real UUID
+    const idx = txsData.findIndex(t => t.id === tempId);
+    if (idx >= 0) txsData[idx].id = data[0].id;
+    showToast(type==='income' ? '✓ تم حفظ الدخل' : '✓ تم حفظ المصروف','success');
+  }
 }
 
 function fmt(n) { return new Intl.NumberFormat('en-US').format(Math.round(n)) + ' MRU'; }
@@ -642,7 +673,7 @@ function renderHome() {
   document.getElementById('kpiExpenseCount').textContent = monthTxs.filter(t=>t.type==='expense').length + ' معاملة';
   document.getElementById('kpiSaving').textContent = `ادخار ${savePct}%`;
 
-  const dayTxs = txs.filter(t => t.date === dateKey(viewDate)).sort((a,b) => b.id - a.id);
+  const dayTxs = txs.filter(t => t.date === dateKey(viewDate));
   const list = document.getElementById('txList');
 
   if (dayTxs.length === 0) {
@@ -656,27 +687,34 @@ function renderHome() {
         <div class="tx-body">
           <div class="tx-title">${t.desc || t.cat}</div>
           <div class="tx-meta">${(t.desc && t.desc !== t.cat) ? t.cat + ' • ' : ''}${t.method}</div>
-          ${t.source ? `<span class="tx-badge">${t.source}</span>` : ''}
         </div>
         <div class="tx-amount ${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</div>
-        <button class="tx-delete" onclick="deleteTx(${t.id})" title="حذف">✕</button>
+        <button class="tx-delete" onclick="deleteTx('${t.id}')" title="حذف">✕</button>
       </div>
     </div>
   `).join('');
 }
 
-function deleteTx(id) {
+async function deleteTx(id) {
   if (!confirm('حذف هذه المعاملة؟')) return;
-  const arr = loadTx().filter(t=>t.id!==id);
-  saveTx(arr);
+  const oldData = [...txsData];
+  txsData = txsData.filter(t => t.id !== id);
   renderHome();
   if (document.getElementById('page-history').classList.contains('active')) renderHistory();
   if (document.getElementById('page-analytics').classList.contains('active')) renderAnalytics();
-  showToast('تم الحذف','error');
+  
+  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  if (error) {
+    txsData = oldData; // revert
+    renderHome();
+    showToast('خطأ في الحذف','error');
+  } else {
+    showToast('تم الحذف','error');
+  }
 }
 
 function renderHistory() {
-  const txs = loadTx().sort((a,b)=>b.id-a.id);
+  const txs = loadTx();
   const list = document.getElementById('historyTabList');
 
   if (txs.length === 0) {
@@ -693,10 +731,9 @@ function renderHistory() {
             <div class="tx-body">
               <div class="tx-title">${t.desc || t.cat}</div>
               <div class="tx-meta">${(t.desc && t.desc !== t.cat) ? t.cat + ' • ' : ''}${t.method}</div>
-              ${t.source ? `<span class="tx-badge">${t.source}</span>` : ''}
             </div>
             <div class="tx-amount ${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</div>
-            <button class="tx-delete" onclick="deleteTx(${t.id})" title="حذف">✕</button>
+            <button class="tx-delete" onclick="deleteTx('${t.id}')" title="حذف">✕</button>
           </div>
         </div>
       `).join('')}
@@ -840,23 +877,29 @@ function renderSettings() {
   document.getElementById('settingsMethodList').innerHTML = r(paymentMethods, 'method');
 }
 
+async function saveSettingsDB() {
+  await supabase.from('user_settings').upsert({ id: 1, income_cats: incomeCats, expense_cats: expenseCats, payment_methods: paymentMethods });
+}
+
 function addListItem(type) {
   const name = prompt('أدخل الاسم الجديد:');
   if (!name || !name.trim()) return;
   const n = name.trim();
-  if (type === 'income') { incomeCats.push(n); setList('mali_income_cats', incomeCats); }
-  if (type === 'expense') { expenseCats.push(n); setList('mali_expense_cats', expenseCats); }
-  if (type === 'method') { paymentMethods.push(n); setList('mali_methods', paymentMethods); }
+  if (type === 'income') incomeCats.push(n);
+  if (type === 'expense') expenseCats.push(n);
+  if (type === 'method') paymentMethods.push(n);
   renderSettings();
+  saveSettingsDB();
   showToast('تمت الإضافة', 'success');
 }
 
 function deleteListItem(type, idx) {
   if (!confirm('هل أنت متأكد من الحذف؟')) return;
-  if (type === 'income') { incomeCats.splice(idx, 1); setList('mali_income_cats', incomeCats); }
-  if (type === 'expense') { expenseCats.splice(idx, 1); setList('mali_expense_cats', expenseCats); }
-  if (type === 'method') { paymentMethods.splice(idx, 1); setList('mali_methods', paymentMethods); }
+  if (type === 'income') incomeCats.splice(idx, 1);
+  if (type === 'expense') expenseCats.splice(idx, 1);
+  if (type === 'method') paymentMethods.splice(idx, 1);
   renderSettings();
+  saveSettingsDB();
   showToast('تم الحذف', 'error');
 }
 
@@ -893,8 +936,8 @@ document.getElementById('installBtn').onclick = async () => {
   deferredPrompt = null;
 };
 
-updateDateNav();
-renderHome();
+// Start
+initData();
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 </script>
 </body>
